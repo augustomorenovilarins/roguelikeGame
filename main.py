@@ -47,6 +47,7 @@ from pgzero.actor import Actor
 from pgzero.clock import clock
 # `sounds` and `music` are available at runtime when using `pgzrun`.
 # Do not import `sounds` from `pgzero` as that raises ImportError in some versions.
+from pgzero.keyboard import keys
 
 TITLE = "Roguelike Prototype"
 
@@ -248,13 +249,15 @@ def on_key_down(key):
     if state != 'playing':
         return
     # grid movement: change target cell and allow smooth movement
-    if key.name == 'left':
+    # prefer comparing to `keys` constants, fallback to attribute `name` for compatibility
+    name = getattr(key, 'name', '').lower() if key is not None else ''
+    if key == keys.LEFT or name == 'left':
         hero.set_target_cell(hero.cell_x - 1, hero.cell_y)
-    elif key.name == 'right':
+    elif key == keys.RIGHT or name == 'right':
         hero.set_target_cell(hero.cell_x + 1, hero.cell_y)
-    elif key.name == 'up':
+    elif key == keys.UP or name == 'up':
         hero.set_target_cell(hero.cell_x, hero.cell_y - 1)
-    elif key.name == 'down':
+    elif key == keys.DOWN or name == 'down':
         hero.set_target_cell(hero.cell_x, hero.cell_y + 1)
 
 
