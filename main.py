@@ -83,6 +83,17 @@ if pygame is not None and os.path.isdir(KENNEY_TILES_DIR) and os.path.exists(TMX
             gids = [int(x) for x in data.replace('\n','').split(',') if x != '']
             map_data = gids
 
+        # read Objects layer if present
+        objects_layer = None
+        for lyr in root.findall('layer'):
+            if lyr.get('name') == 'Objects':
+                objects_layer = lyr
+                break
+        objects_data = None
+        if objects_layer is not None:
+            odata = objects_layer.find('data').text.strip()
+            objects_data = [int(x) for x in odata.replace('\n','').split(',') if x != '']
+
         have_kenney = map_data is not None
     except Exception:
         have_kenney = False
@@ -118,10 +129,30 @@ def load_tile_image_by_index(index):
 # load hero/enemy specific sprites from kenney tiles if present
 hero_sprite_tile = None
 enemy_sprite_tile = None
+goal_sprite_tile = None
 if have_kenney:
     # user requested specific tiles
     hero_sprite_tile = load_tile_image_by_index(98)  # tile_0097.png -> index 98 (1-based)
     enemy_sprite_tile = load_tile_image_by_index(122)  # tile_0121.png -> index 122 (1-based)
+    goal_sprite_tile = load_tile_image_by_index(90)  # tile_0089.png -> index 90 (1-based)
+
+    # determine goal cell from objects_data (first non-zero) if available
+    goal_cell = None
+    try:
+        if objects_data is not None:
+            for i, v in enumerate(objects_data):
+                if v != 0:
+                    gx = i % map_width
+                    gy = i // map_width
+                    goal_cell = (gx, gy)
+                    break
+    except Exception:
+        goal_cell = None
+    if goal_cell is None:
+        # fallback to bottom-right corner
+        goal_cell = (map_width - 2, map_height - 2)
+else:
+    goal_cell = (GRID_W - 2, GRID_H - 2)
 
 import pgzrun
 from pgzero.actor import Actor
@@ -283,6 +314,8 @@ def draw():
         draw_menu()
     elif state == 'playing':
         draw_game()
+    elif state == 'victory':
+        draw_victory()
 
 
 def draw_menu():
@@ -321,6 +354,21 @@ def draw_game():
                 r = Rect(x, y, CELL, CELL)
                 screen.draw.rect(r, (70, 70, 70))
     # draw entities
+    # draw goal
+    try:
+        if have_kenney and goal_sprite_tile is not None:
+            gx, gy = goal_cell
+            px = gx * CELL + (CELL - goal_sprite_tile.get_width()) // 2
+            py = gy * CELL + (CELL - goal_sprite_tile.get_height()) // 2
+            try:
+                screen.surface.blit(goal_sprite_tile, (px, py))
+            except Exception:
+                pass
+        else:
+            # simple marker
+            screen.draw.filled_rect(Rect(goal_cell[0]*CELL+12, goal_cell[1]*CELL+12, CELL-24, CELL-24), (200,200,50))
+    except Exception:
+        pass
     hero.draw(screen)
     for e in enemies:
         e.draw(screen)
@@ -336,6 +384,9 @@ def update(dt):
             # simple collision detection
             if int(e.x)//CELL == int(hero.x)//CELL and int(e.y)//CELL == int(hero.y)//CELL:
                 on_hit()
+        # check victory
+        if int(hero.x)//CELL == goal_cell[0] and int(hero.y)//CELL == goal_cell[1]:
+            on_victory()
 
 
 def on_hit():
@@ -414,6 +465,21 @@ def start_game():
                 music.play('bg')
             except Exception:
                 pass
+
+
+def on_victory():
+    global state
+    state = 'victory'
+    try:
+        if 'music' in globals():
+            music.stop()
+    except Exception:
+        pass
+
+
+def draw_victory():
+    screen.clear()
+    screen.draw.text("Você venceu!", center=(WIDTH//2, HEIGHT//2), fontsize=64, color='yellow')
 
 
 def quit():
