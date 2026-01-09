@@ -177,7 +177,6 @@ else:
 
 import pgzrun
 from pgzero.actor import Actor
-from pgzero.clock import clock
 # `sounds` and `music` are available at runtime when using `pgzrun`.
 # Do not import `sounds` from `pgzero` as that raises ImportError in some versions.
 from pgzero.keyboard import keys
@@ -204,8 +203,6 @@ class AnimatedEntity:
         self.target_x = self.x
         self.target_y = self.y
         self.speed = 180.0  # pixels per second
-        self.move_dx = 0
-        self.move_dy = 0
         self.frame_index = 0
         self.frame_timer = 0.0
         self.idle_frames = color_frames_idle
@@ -480,9 +477,8 @@ def draw_game():
             drawn = False
             if have_kenney and map_data is not None:
                 idx = map_data[gy * GRID_W + gx]
-                gid = gid_to_tile_index(idx)
-                if gid > 0:
-                    img = load_tile_image_by_index(gid)
+                if idx > 0:
+                    img = load_tile_image_by_index(idx)
                     if img is not None:
                         try:
                             screen.surface.blit(img, (x, y))
