@@ -11,7 +11,6 @@ CELL = 48
 GRID_W = WIDTH // CELL
 GRID_H = HEIGHT // CELL
 
-TITLE = "Roguelike - Prototype"
 
 # Ensure resource folders exist
 Path("sounds").mkdir(exist_ok=True)
@@ -183,7 +182,17 @@ from pgzero.clock import clock
 # Do not import `sounds` from `pgzero` as that raises ImportError in some versions.
 from pgzero.keyboard import keys
 
-TITLE = "Roguelike Prototype"
+
+# menu background (load if present)
+menu_bg_surf = None
+menu_bg_path = os.path.join('images', 'newgamebackground.jpg')
+if os.path.exists(menu_bg_path) and pygame is not None:
+    try:
+        _img = pygame.image.load(menu_bg_path).convert()
+        menu_bg_surf = pygame.transform.scale(_img, (WIDTH, HEIGHT))
+    except Exception:
+        menu_bg_surf = None
+
 
 
 class AnimatedEntity:
@@ -387,17 +396,79 @@ def draw():
 
 
 def draw_menu():
-    screen.draw.text(TITLE, center=(WIDTH//2, 80), fontsize=44, color='white')
-    # buttons
-    start_rect = Rect(WIDTH//2 - 100, 160, 200, 50)
-    music_rect = Rect(WIDTH//2 - 100, 230, 200, 50)
-    exit_rect = Rect(WIDTH//2 - 100, 300, 200, 50)
-    screen.draw.filled_rect(start_rect, (40, 120, 40))
-    screen.draw.filled_rect(music_rect, (120, 120, 40))
-    screen.draw.filled_rect(exit_rect, (120, 40, 40))
-    screen.draw.text('Start Game', center=start_rect.center, color='white')
-    screen.draw.text(f'Music: {"On" if music_on else "Off"}', center=music_rect.center, color='white')
-    screen.draw.text('Exit', center=exit_rect.center, color='white')
+    # draw background image if loaded
+    try:
+        if menu_bg_surf is not None and pygame is not None:
+            try:
+                screen.surface.blit(menu_bg_surf, (0, 0))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # horizontal layout for three buttons
+    btn_w = 160
+    btn_h = 56
+    spacing = 24
+    total_w = 3 * btn_w + 2 * spacing
+    left = max(10, WIDTH // 2 - total_w // 2)
+    y = HEIGHT // 2
+
+    start_rect = Rect(left, y, btn_w, btn_h)
+    music_rect = Rect(left + btn_w + spacing, y, btn_w, btn_h)
+    exit_rect = Rect(left + 2 * (btn_w + spacing), y, btn_w, btn_h)
+
+    # attempt to use kenney tile_0040 as button background
+    tile_bg = None
+    try:
+        # tile_0040.png corresponds to index 41 (1-based)
+        if have_kenney and pygame is not None:
+            tile_bg = load_tile_image_by_index(41)
+    except Exception:
+        tile_bg = None
+
+    # draw each button using the tile as background when available
+    buttons = [
+        (start_rect, 'Start Game', (40, 120, 40)),
+        (music_rect, f'Music: {"On" if music_on else "Off"}', (120, 120, 40)),
+        (exit_rect, 'Exit', (120, 40, 40)),
+    ]
+
+    # mouse pos for hover
+    try:
+        mx, my = pygame.mouse.get_pos() if pygame is not None else (0, 0)
+    except Exception:
+        mx, my = (0, 0)
+
+    base_alpha = int(255 * 0.5)
+    hover_alpha = int(255 * 0.9)
+
+    for rect, label, fallback_color in buttons:
+        hovered = rect.collidepoint((mx, my))
+        alpha = hover_alpha if hovered else base_alpha
+        drawn = False
+        if tile_bg is not None and pygame is not None:
+            try:
+                bg = pygame.transform.scale(tile_bg, (rect.width, rect.height))
+                surf = bg.copy()
+                surf.set_alpha(alpha)
+                screen.surface.blit(surf, (rect.x, rect.y))
+                drawn = True
+            except Exception:
+                drawn = False
+        if not drawn:
+            if pygame is not None:
+                try:
+                    surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                    r, g, b = fallback_color
+                    surf.fill((r, g, b, alpha))
+                    screen.surface.blit(surf, (rect.x, rect.y))
+                except Exception:
+                    screen.draw.filled_rect(rect, fallback_color)
+            else:
+                screen.draw.filled_rect(rect, fallback_color)
+
+        screen.draw.text(label, center=(rect.x + rect.width // 2, rect.y + rect.height // 2), color='white')
 
 
 def draw_game():
@@ -542,9 +613,16 @@ def on_key_down(key):
 def on_mouse_down(pos):
     global state, music_on
     if state == 'menu':
-        start_rect = Rect(WIDTH//2 - 100, 160, 200, 50)
-        music_rect = Rect(WIDTH//2 - 100, 230, 200, 50)
-        exit_rect = Rect(WIDTH//2 - 100, 300, 200, 50)
+        # align with horizontal layout used in draw_menu
+        btn_w = 160
+        btn_h = 56
+        spacing = 24
+        total_w = 3 * btn_w + 2 * spacing
+        left = max(10, WIDTH // 2 - total_w // 2)
+        y = HEIGHT // 2
+        start_rect = Rect(left, y, btn_w, btn_h)
+        music_rect = Rect(left + btn_w + spacing, y, btn_w, btn_h)
+        exit_rect = Rect(left + 2 * (btn_w + spacing), y, btn_w, btn_h)
         if start_rect.collidepoint(pos):
             start_game()
         elif music_rect.collidepoint(pos):

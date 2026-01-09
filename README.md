@@ -39,8 +39,8 @@ Objetivo e mecânicas principais
 - Inimigos surgem periodicamente e também existem inimigos persistentes. Alguns inimigos aparecem temporariamente, perseguem o herói por um segundo e somem.
 - O herói não pode atravessar paredes: apenas tiles considerados "chão" (determinados pelo TMX ou lista explícita) são percorríveis.
 
-Screenshot
-- Abaixo há um screenshot de exemplo do jogo (placeholder). Substitua `images/screenshot.png` por uma captura real para melhorar o README.
+Screenshots
+- Abaixo há um screenshot de exemplo do jogo.
 
 ![screenshot](images/screenshot.png)
 
