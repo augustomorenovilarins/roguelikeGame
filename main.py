@@ -57,6 +57,9 @@ map_tilewidth = 16
 map_tileheight = 16
 map_width = GRID_W
 map_height = GRID_H
+floor_gids = set()
+explicit_floor_indices = [42, 48, 49, 50, 51, 52, 53]
+explicit_floor_gids = set()
 
 import xml.etree.ElementTree as ET
 
@@ -80,8 +83,26 @@ if pygame is not None and os.path.isdir(KENNEY_TILES_DIR) and os.path.exists(TMX
                 break
         if layer is not None:
             data = layer.find('data').text.strip()
-            gids = [int(x) for x in data.replace('\n','').split(',') if x != '']
-            map_data = gids
+            raw_gids = [int(x) for x in data.replace('\n','').split(',') if x != '']
+            # normalize gids to remove flip/rotation bits
+            map_data = [gid_to_tile_index(g) for g in raw_gids]
+
+        # determine most common gids (likely floor tiles)
+        try:
+            from collections import Counter
+            counts = Counter([g for g in map_data if g != 0])
+            most_common = [g for g, _ in counts.most_common(8)]
+            floor_gids = set(most_common)
+        except Exception:
+            floor_gids = set()
+        # Also explicitly treat specific kenney tiles as floor per user request
+        try:
+            for num in explicit_floor_indices:
+                gid = int(num) + 1
+                floor_gids.add(gid)
+                explicit_floor_gids.add(gid)
+        except Exception:
+            pass
 
         # read Objects layer if present
         objects_layer = None
@@ -92,7 +113,8 @@ if pygame is not None and os.path.isdir(KENNEY_TILES_DIR) and os.path.exists(TMX
         objects_data = None
         if objects_layer is not None:
             odata = objects_layer.find('data').text.strip()
-            objects_data = [int(x) for x in odata.replace('\n','').split(',') if x != '']
+            raw_objs = [int(x) for x in odata.replace('\n','').split(',') if x != '']
+            objects_data = [gid_to_tile_index(g) for g in raw_objs]
 
         have_kenney = map_data is not None
     except Exception:
@@ -278,9 +300,22 @@ class Hero(AnimatedEntity):
         super().__init__(cx, cy, idle, move, image_idle, image_move)
         self.hp = 5
 
+    def set_target_cell(self, cx, cy):
+        # prevent walking through walls when TMX floor info is available
+        cx = max(0, min(GRID_W - 1, cx))
+        cy = max(0, min(GRID_H - 1, cy))
+        try:
+            if have_kenney and map_data is not None and floor_gids:
+                idx = map_data[cy * GRID_W + cx]
+                if idx not in floor_gids:
+                    return
+        except Exception:
+            pass
+        super().set_target_cell(cx, cy)
+
 
 class Enemy(AnimatedEntity):
-    def __init__(self, cx, cy, territory_w=3, territory_h=3):
+    def __init__(self, cx, cy, territory_w=3, territory_h=3, persistent=False, visible_duration=8.0, chase_time=1.0):
         idle = [(60, 60, 200), (80, 80, 220)]
         move = [(80, 80, 255), (40, 40, 200)]
         image_idle = ['enemy_idle_1']
@@ -288,6 +323,12 @@ class Enemy(AnimatedEntity):
         super().__init__(cx, cy, idle, move, image_idle, image_move)
         self.territory = (max(0, cx - territory_w//2), max(0, cy - territory_h//2), territory_w, territory_h)
         self.choose_new_target()
+        self.persistent = persistent
+        self.visible_timer = 0.0
+        self.visible_duration = visible_duration
+        self.chase_time = chase_time
+        self.chase_remaining = chase_time
+        self.dead = False
 
     def choose_new_target(self):
         tx = random.randint(self.territory[0], min(GRID_W-1, self.territory[0] + self.territory[2] - 1))
@@ -295,9 +336,32 @@ class Enemy(AnimatedEntity):
         self.set_target_cell(tx, ty)
 
     def update(self, dt):
-        super().update(dt)
-        if not self.is_moving and random.random() < 0.01:
-            self.choose_new_target()
+        # If not persistent, increment visibility timer and handle chase -> disappear
+        if not self.persistent:
+            self.visible_timer += dt
+            # chase hero for the first `chase_time` seconds
+            if self.chase_remaining > 0:
+                self.chase_remaining -= dt
+                # set target to hero cell to move toward hero
+                try:
+                    self.set_target_cell(hero.cell_x, hero.cell_y)
+                    # increase speed briefly while chasing
+                    old_speed = self.speed
+                    self.speed = max(self.speed, 240.0)
+                    super().update(dt)
+                    self.speed = old_speed
+                except Exception:
+                    super().update(dt)
+            else:
+                super().update(dt)
+            # disappear after visible_duration
+            if self.visible_timer >= self.visible_duration:
+                self.dead = True
+        else:
+            # persistent enemies behave as before, but with more activity
+            super().update(dt)
+            if not self.is_moving and random.random() < 0.05:
+                self.choose_new_target()
 
 
 # Game state
@@ -305,7 +369,11 @@ state = 'menu'
 music_on = True
 
 hero = Hero(GRID_W // 2, GRID_H // 2)
-enemies = [Enemy(3, 3, 4, 4), Enemy(10, 6, 3, 5), Enemy(5, 9, 5, 3)]
+enemies = [Enemy(3, 3, 4, 4, persistent=True), Enemy(10, 6, 3, 5, persistent=True), Enemy(5, 9, 5, 3, persistent=True)]
+# enemy spawn control
+enemy_spawn_timer = 0.0
+spawn_interval = 5.0  # seconds between spawns
+max_enemies = 8
 
 
 def draw():
@@ -379,11 +447,54 @@ def draw_game():
 def update(dt):
     if state == 'playing':
         hero.update(dt)
-        for e in enemies:
+        for e in list(enemies):
             e.update(dt)
             # simple collision detection
             if int(e.x)//CELL == int(hero.x)//CELL and int(e.y)//CELL == int(hero.y)//CELL:
                 on_hit()
+        # remove dead enemies
+        enemies[:] = [e for e in enemies if not getattr(e, 'dead', False)]
+        # spawn enemies periodically on floor cells
+        global enemy_spawn_timer
+        enemy_spawn_timer += dt
+        try:
+            if enemy_spawn_timer >= spawn_interval and len(enemies) < max_enemies:
+                enemy_spawn_timer = 0.0
+                # choose spawn candidate from floor_gids if available
+                candidates = []
+                if map_data is not None and floor_gids:
+                    for gy in range(GRID_H):
+                        for gx in range(GRID_W):
+                            idx = map_data[gy * GRID_W + gx]
+                            if idx in floor_gids:
+                                # avoid hero/enemy cells
+                                if (gx, gy) == (hero.cell_x, hero.cell_y):
+                                    continue
+                                conflict = False
+                                for ex in enemies:
+                                    if (gx, gy) == (ex.cell_x, ex.cell_y):
+                                        conflict = True
+                                        break
+                                if not conflict:
+                                    candidates.append((gx, gy))
+                # fallback to any free cell
+                if not candidates:
+                    for gy in range(GRID_H):
+                        for gx in range(GRID_W):
+                            if (gx, gy) == (hero.cell_x, hero.cell_y):
+                                continue
+                            conflict = False
+                            for ex in enemies:
+                                if (gx, gy) == (ex.cell_x, ex.cell_y):
+                                    conflict = True
+                                    break
+                            if not conflict:
+                                candidates.append((gx, gy))
+                if candidates:
+                    sx, sy = random.choice(candidates)
+                    enemies.append(Enemy(sx, sy, 3, 3))
+        except Exception:
+            pass
         # check victory
         if int(hero.x)//CELL == goal_cell[0] and int(hero.y)//CELL == goal_cell[1]:
             on_victory()
@@ -455,9 +566,47 @@ def on_mouse_down(pos):
 
 
 def start_game():
-    global state, hero
+    global state, hero, goal_cell
     hero = Hero(GRID_W // 2, GRID_H // 2)
     random.shuffle(enemies)
+    # choose a random goal cell that's not occupied by the hero or enemies
+    # prefer cells that belong to the detected floor_gids (from TMX)
+    candidates = []
+    try:
+        # prefer explicit floor tiles when available
+        if map_data is not None and explicit_floor_gids:
+            for gy in range(GRID_H):
+                for gx in range(GRID_W):
+                    idx = map_data[gy * GRID_W + gx]
+                    if idx in explicit_floor_gids:
+                        candidates.append((gx, gy))
+        elif map_data is not None and 'floor_gids' in globals() and floor_gids:
+            for gy in range(GRID_H):
+                for gx in range(GRID_W):
+                    idx = map_data[gy * GRID_W + gx]
+                    if idx in floor_gids:
+                        candidates.append((gx, gy))
+    except Exception:
+        candidates = []
+
+    if not candidates:
+        # fallback to any free cell
+        for gy in range(GRID_H):
+            for gx in range(GRID_W):
+                if (gx, gy) == (hero.cell_x, hero.cell_y):
+                    continue
+                conflict = False
+                for e in enemies:
+                    if (gx, gy) == (e.cell_x, e.cell_y):
+                        conflict = True
+                        break
+                if not conflict:
+                    candidates.append((gx, gy))
+
+    if candidates:
+        goal_cell = random.choice(candidates)
+    else:
+        goal_cell = (max(0, GRID_W-2), max(0, GRID_H-2))
     state = 'playing'
     if music_on:
         if 'music' in globals():
