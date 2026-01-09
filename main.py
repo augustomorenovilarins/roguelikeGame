@@ -45,13 +45,14 @@ except Exception:
 import pgzrun
 from pgzero.actor import Actor
 from pgzero.clock import clock
-from pgzero import music, sounds
+# `sounds` and `music` are available at runtime when using `pgzrun`.
+# Do not import `sounds` from `pgzero` as that raises ImportError in some versions.
 
 TITLE = "Roguelike Prototype"
 
 
 class AnimatedEntity:
-    def __init__(self, cell_x, cell_y, color_frames_idle, color_frames_move):
+    def __init__(self, cell_x, cell_y, color_frames_idle, color_frames_move, image_frames_idle=None, image_frames_move=None):
         self.cell_x = cell_x
         self.cell_y = cell_y
         self.x = cell_x * CELL
@@ -65,6 +66,19 @@ class AnimatedEntity:
         self.frame_timer = 0.0
         self.idle_frames = color_frames_idle
         self.move_frames = color_frames_move
+        self.image_frames_idle = image_frames_idle or []
+        self.image_frames_move = image_frames_move or []
+        self.use_images = False
+        # determine whether all image frames exist in the images/ folder
+        try:
+            missing = False
+            for name in (self.image_frames_idle + self.image_frames_move):
+                if not os.path.exists(os.path.join('images', name + '.png')):
+                    missing = True
+                    break
+            self.use_images = (len(self.image_frames_idle + self.image_frames_move) > 0) and (not missing)
+        except Exception:
+            self.use_images = False
 
     @property
     def is_moving(self):
@@ -100,6 +114,20 @@ class AnimatedEntity:
             self.frame_index = (self.frame_index + 1) % max(1, len(self.move_frames if self.is_moving else self.idle_frames))
 
     def draw(self, screen):
+        if self.use_images and 'Actor' in globals():
+            frames = self.image_frames_move if self.is_moving else self.image_frames_idle
+            if not frames:
+                return
+            name = frames[self.frame_index % len(frames)]
+            try:
+                a = Actor(name)
+                a.pos = (int(self.x) + CELL // 2, int(self.y) + CELL // 2)
+                a.draw()
+                return
+            except Exception:
+                # fallback to color drawing
+                pass
+
         frames = self.move_frames if self.is_moving else self.idle_frames
         if not frames:
             return
@@ -112,7 +140,9 @@ class Hero(AnimatedEntity):
     def __init__(self, cx, cy):
         idle = [(200, 60, 60), (220, 80, 80)]
         move = [(255, 80, 80), (200, 40, 40), (255, 80, 80), (180, 30, 30)]
-        super().__init__(cx, cy, idle, move)
+        image_idle = ['hero_idle_1', 'hero_idle_2']
+        image_move = ['hero_move_1', 'hero_move_2']
+        super().__init__(cx, cy, idle, move, image_idle, image_move)
         self.hp = 5
 
 
@@ -120,7 +150,9 @@ class Enemy(AnimatedEntity):
     def __init__(self, cx, cy, territory_w=3, territory_h=3):
         idle = [(60, 60, 200), (80, 80, 220)]
         move = [(80, 80, 255), (40, 40, 200)]
-        super().__init__(cx, cy, idle, move)
+        image_idle = ['enemy_idle_1']
+        image_move = []
+        super().__init__(cx, cy, idle, move, image_idle, image_move)
         self.territory = (max(0, cx - territory_w//2), max(0, cy - territory_h//2), territory_w, territory_h)
         self.choose_new_target()
 
@@ -192,10 +224,11 @@ def update(dt):
 def on_hit():
     if hero.hp > 0:
         hero.hp -= 1
-        try:
-            sounds.sfx.play()
-        except Exception:
-            pass
+        if 'sounds' in globals():
+            try:
+                sounds.sfx.play()
+            except Exception:
+                pass
         if hero.hp <= 0:
             go_to_menu()
 
@@ -204,10 +237,11 @@ def go_to_menu():
     global state
     state = 'menu'
     if music_on:
-        try:
-            music.stop()
-        except Exception:
-            pass
+        if 'music' in globals():
+            try:
+                music.stop()
+            except Exception:
+                pass
 
 
 def on_key_down(key):
@@ -235,15 +269,17 @@ def on_mouse_down(pos):
         elif music_rect.collidepoint(pos):
             music_on = not music_on
             if music_on:
-                try:
-                    music.play('bg')
-                except Exception:
-                    pass
+                if 'music' in globals():
+                    try:
+                        music.play('bg')
+                    except Exception:
+                        pass
             else:
-                try:
-                    music.stop()
-                except Exception:
-                    pass
+                if 'music' in globals():
+                    try:
+                        music.stop()
+                    except Exception:
+                        pass
         elif exit_rect.collidepoint(pos):
             quit()
 
@@ -254,10 +290,11 @@ def start_game():
     random.shuffle(enemies)
     state = 'playing'
     if music_on:
-        try:
-            music.play('bg')
-        except Exception:
-            pass
+        if 'music' in globals():
+            try:
+                music.play('bg')
+            except Exception:
+                pass
 
 
 def quit():
