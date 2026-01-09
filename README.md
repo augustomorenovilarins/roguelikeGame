@@ -3,7 +3,7 @@
 Este repositório contém um protótipo de roguelike feito com PgZero, implementado para atender ao teste técnico.
 
 **Lore**
-- **O Cavaleiro Perdido**: Há muito tempo, um corajoso cavaleiro aventurou-se no Tiny Dungeon em busca de um tesouro lendário, escondido na câmara mais profunda. Séculos de expedições fracassadas transformaram a masmorra num lugar de ecos — as versões passadas do cavaleiro agora assombram os corredores, corrompidas pelo arrependimento e obrigadas a proteger o tesouro. Você controla o último descendente desse cavaleiro, condenado a percorrer os mesmos azulejos e enfrentar os fantasmas de vidas anteriores. Encontre o tesouro perdido, derrote ou evite os espectros do seu passado e quebre a maldição.
+- **O Cavaleiro Perdido**: Há muito tempo, um corajoso cavaleiro aventurou-se no Tiny Dungeon em busca de um tesouro lendário, escondido na câmara mais profunda. Séculos de expedições fracassadas transformaram a masmorra num lugar de ecos, as versões passadas do cavaleiro agora assombram os corredores, corrompidas pelo arrependimento e obrigadas a proteger o tesouro. Você controla o último descendente desse cavaleiro, condenado a percorrer os mesmos azulejos e enfrentar os fantasmas de vidas anteriores. Encontre o tesouro perdido, derrote ou evite os espectros do seu passado e quebre a maldição.
 
 **Como Vencer / Perder**
 - Vencer: Alcance o tile objetivo dourado (marcado no mapa). Quando seu herói tocar o objetivo, o jogo termina e aparece a tela de vitória ("Você venceu!").
