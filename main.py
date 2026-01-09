@@ -41,6 +41,87 @@ try:
     from pygame import Rect
 except Exception:
     Rect = None
+try:
+    import pygame
+except Exception:
+    pygame = None
+
+# Try to load kenney tiles and parse sampleMap.tmx (if the user added the pack)
+KENNEY_DIR = os.path.join(os.getcwd(), 'kenney_tiny-dungeon')
+KENNEY_TILES_DIR = os.path.join(KENNEY_DIR, 'Tiles')
+TMX_PATH = os.path.join(KENNEY_DIR, 'Tiled', 'sampleMap.tmx')
+have_kenney = False
+tile_cache = {}
+map_data = None
+map_tilewidth = 16
+map_tileheight = 16
+map_width = GRID_W
+map_height = GRID_H
+
+import xml.etree.ElementTree as ET
+
+def gid_to_tile_index(gid):
+    return gid & 0x1FFFFFFF
+
+if pygame is not None and os.path.isdir(KENNEY_TILES_DIR) and os.path.exists(TMX_PATH):
+    try:
+        tree = ET.parse(TMX_PATH)
+        root = tree.getroot()
+        map_width = int(root.get('width'))
+        map_height = int(root.get('height'))
+        map_tilewidth = int(root.get('tilewidth'))
+        map_tileheight = int(root.get('tileheight'))
+
+        # read layer named Dungeon
+        layer = None
+        for lyr in root.findall('layer'):
+            if lyr.get('name') == 'Dungeon':
+                layer = lyr
+                break
+        if layer is not None:
+            data = layer.find('data').text.strip()
+            gids = [int(x) for x in data.replace('\n','').split(',') if x != '']
+            map_data = gids
+
+        have_kenney = map_data is not None
+    except Exception:
+        have_kenney = False
+
+# If map was loaded, adjust grid/window size
+if have_kenney:
+    GRID_W = map_width
+    GRID_H = map_height
+    WIDTH = GRID_W * CELL
+    HEIGHT = GRID_H * CELL
+
+# tile image loader by TMX tile index
+def load_tile_image_by_index(index):
+    # index is gid_mask (1-based); convert to zero-based file name
+    if index <= 0:
+        return None
+    if index in tile_cache:
+        return tile_cache[index]
+    fname = f'tile_{index-1:04d}.png'
+    path = os.path.join(KENNEY_TILES_DIR, fname)
+    if not os.path.exists(path):
+        tile_cache[index] = None
+        return None
+    try:
+        img = pygame.image.load(path).convert_alpha()
+        img = pygame.transform.scale(img, (CELL, CELL))
+        tile_cache[index] = img
+        return img
+    except Exception:
+        tile_cache[index] = None
+        return None
+
+# load hero/enemy specific sprites from kenney tiles if present
+hero_sprite_tile = None
+enemy_sprite_tile = None
+if have_kenney:
+    # user requested specific tiles
+    hero_sprite_tile = load_tile_image_by_index(98)  # tile_0097.png -> index 98 (1-based)
+    enemy_sprite_tile = load_tile_image_by_index(122)  # tile_0121.png -> index 122 (1-based)
 
 import pgzrun
 from pgzero.actor import Actor
@@ -134,6 +215,26 @@ class AnimatedEntity:
             return
         color = frames[self.frame_index % len(frames)]
         rect = Rect(int(self.x) + 8, int(self.y) + 8, CELL - 16, CELL - 16) if Rect else (int(self.x) + 8, int(self.y) + 8, CELL - 16, CELL - 16)
+        # If we have kenney tiles loaded, optionally draw hero/enemy images
+        if have_kenney and pygame is not None:
+            cls = getattr(self, '__class__', None)
+            name = cls.__name__ if cls is not None else ''
+            if name == 'Hero' and hero_sprite_tile is not None:
+                px = int(self.x) + (CELL - hero_sprite_tile.get_width()) // 2
+                py = int(self.y) + (CELL - hero_sprite_tile.get_height()) // 2
+                try:
+                    screen.surface.blit(hero_sprite_tile, (px, py))
+                    return
+                except Exception:
+                    pass
+            if name == 'Enemy' and enemy_sprite_tile is not None:
+                px = int(self.x) + (CELL - enemy_sprite_tile.get_width()) // 2
+                py = int(self.y) + (CELL - enemy_sprite_tile.get_height()) // 2
+                try:
+                    screen.surface.blit(enemy_sprite_tile, (px, py))
+                    return
+                except Exception:
+                    pass
         screen.draw.filled_rect(rect, color)
 
 
@@ -199,11 +300,26 @@ def draw_menu():
 
 
 def draw_game():
-    # grid background
+    # grid background (draw tiles from TMX if available)
     for gx in range(GRID_W):
         for gy in range(GRID_H):
-            r = Rect(gx*CELL, gy*CELL, CELL, CELL)
-            screen.draw.rect(r, (70, 70, 70))
+            x = gx * CELL
+            y = gy * CELL
+            drawn = False
+            if have_kenney and map_data is not None:
+                idx = map_data[gy * GRID_W + gx]
+                gid = gid_to_tile_index(idx)
+                if gid > 0:
+                    img = load_tile_image_by_index(gid)
+                    if img is not None:
+                        try:
+                            screen.surface.blit(img, (x, y))
+                            drawn = True
+                        except Exception:
+                            drawn = False
+            if not drawn:
+                r = Rect(x, y, CELL, CELL)
+                screen.draw.rect(r, (70, 70, 70))
     # draw entities
     hero.draw(screen)
     for e in enemies:
